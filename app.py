@@ -35,6 +35,8 @@ inferencia = VariableElimination(modelo)
 
 # 4. Dashboard interactivo
 app = dash.Dash(__name__)
+app.title = "Evaluador de Riesgo de Hipertensión"
+server = app.server
 
 app.layout = html.Div([
     html.H1("Evaluador de Riesgo de Hipertensión", style={'textAlign': 'center'}),
