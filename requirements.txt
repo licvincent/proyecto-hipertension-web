@@ -1,8 +1,4 @@
 pandas
 plotly
 dash
-numpy
-bnlearn
-weasyprint
-pgmpy
 gunicorn
