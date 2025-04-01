@@ -192,4 +192,4 @@ def calcular_probabilidades(n_clicks, imc, actividad_fisica, dieta, glucosa, col
     return go.Figure(), "Por favor, proporcione sus datos y presione 'Calcular Probabilidades'."
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=False)
