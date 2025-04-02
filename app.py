@@ -7,23 +7,18 @@ import dash
 from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
 
-
-
 # 1. Cargar el dataset desde el URL proporcionado
 url = "https://raw.githubusercontent.com/licvincent/Hipertension_Arterial_Mexico/refs/heads/main/dataset_hipertension_procesado.csv"
 dataset = pd.read_csv(url)
 
-# Verificar que el dataset cargado tiene todas las columnas necesarias
-#print(dataset.head())
-
-# 2. Definir el modelo (grafo) con la variable 'Sexo'
+# 2. Definir el modelo (grafo) incluyendo la variable 'Sexo'
 modelo = DiscreteBayesianNetwork([
     ('IMC', 'Riesgo de Hipertensión'),
     ('Glucosa', 'Riesgo de Hipertensión'),
     ('Colesterol', 'Riesgo de Hipertensión'),
     ('Edad', 'Riesgo de Hipertensión'),
     ('Actividad Física', 'Riesgo de Hipertensión'),
-    ('Sexo', 'Riesgo de Hipertensión'),  # Agregar Sexo
+    ('Sexo', 'Riesgo de Hipertensión'),
     ('IMC', 'Colesterol'),
     ('Edad', 'Actividad Física'),
     ('Dieta', 'Colesterol')
@@ -35,12 +30,11 @@ inferencia = VariableElimination(modelo)
 
 # 4. Dashboard interactivo
 app = dash.Dash(__name__)
-app.title = "Evaluador de Riesgo de Hipertensión"
+app.title = "Dashboard de Hipertensión"
 server = app.server
 
 app.layout = html.Div([
     html.H1("Evaluador de Riesgo de Hipertensión", style={'textAlign': 'center'}),
-
     html.Div([
         html.Label("IMC:"),
         dcc.Dropdown(
@@ -127,25 +121,16 @@ app.layout = html.Div([
 
     html.Button("Calcular Probabilidades", id='btn-calcular', n_clicks=0, style={'margin': '20px'}),
 
+    # Contenedor para la gráfica de pastel
     dcc.Graph(id='grafico-resultados'),
 
-    html.Div(id='mensaje', style={
-        'margin-top': '20px',
-        'padding': '10px',
-        'backgroundColor': '#f9f9f9',
-        'borderRadius': '8px',
-        'border': '1px solid #ddd',
-        'fontSize': '16px',
-        'lineHeight': '1.5',
-        'width': '70%',
-        'margin': 'auto',
-        'textAlign': 'center'
-    })
+    # Contenedor para la tabla de resultados
+    html.Div(id='tabla-resultados', style={'width': '50%', 'margin': 'auto', 'textAlign': 'center', 'padding': '20px'})
 ])
 
 @app.callback(
     [Output('grafico-resultados', 'figure'),
-     Output('mensaje', 'children')],
+     Output('tabla-resultados', 'children')],
     [Input('btn-calcular', 'n_clicks')],
     [Input('imc', 'value'),
      Input('actividad_fisica', 'value'),
@@ -169,29 +154,34 @@ def calcular_probabilidades(n_clicks, imc, actividad_fisica, dieta, glucosa, col
         resultado = inferencia.query(variables=['Riesgo de Hipertensión'], evidence=evidencia)
         probabilidades = resultado.values
 
-        fig = go.Figure(data=[
-            go.Bar(name='Probabilidades', x=['No (Sin Riesgo)', 'Sí (Con Riesgo)'], y=probabilidades, marker_color=['green', 'red'])
-        ])
-        fig.update_layout(
-            title="Probabilidades de Riesgo de Hipertensión",
-            xaxis_title="Estado de Riesgo",
-            yaxis_title="Probabilidad",
-            showlegend=False
-        )
+        # Crear gráfica de pastel
+        fig = go.Figure(data=[go.Pie(
+            labels=['Sin riesgo de hipertensión', 'Con riesgo de hipertensión'],
+            values=probabilidades,
+            marker_colors=['green', 'red'],
+            hoverinfo='label+percent'
+        )])
+        fig.update_layout(title="Probabilidad de Riesgo de Hipertensión")
 
-        mensaje = f"""
-        Basado en los datos proporcionados:
-        - Probabilidad de NO desarrollar hipertensión: {probabilidades[0]:.2%}.
-        - Probabilidad de desarrollar hipertensión: {probabilidades[1]:.2%}.
+        # Crear tabla de resultados
+        tabla = html.Table([
+            html.Thead(
+                html.Tr([html.Th("Estado"), html.Th("Probabilidad")])
+            ),
+            html.Tbody([
+                html.Tr([html.Td("Sin riesgo de hipertensión"), html.Td(f"{probabilidades[0]:.2%}")]),
+                html.Tr([html.Td("Con riesgo de hipertensión"), html.Td(f"{probabilidades[1]:.2%}")])
+            ])
+        ], style={'width': '100%', 'border': '1px solid black', 'borderCollapse': 'collapse',
+                  'marginTop': '20px', 'fontSize': '16px'})
 
-        Recomendación:
-        - Mantenga hábitos saludables como una dieta equilibrada y ejercicio regular.
-        - Consulte con un médico para un seguimiento personalizado.
-        """
+        return fig, tabla
 
-        return fig, mensaje
-
-    return go.Figure(), "Por favor, proporcione sus datos y presione 'Calcular Probabilidades'."
+    # Mensaje inicial cuando no se han ingresado datos aún
+    mensaje_inicial = html.Div("Por favor, proporcione sus datos y presione 'Calcular Probabilidades'.",
+                               style={'fontSize': '18px', 'marginTop': '20px'})
+    return go.Figure(), mensaje_inicial
 
 if __name__ == '__main__':
+    #app.run(debug=True)
     app.run_server(debug=False)
