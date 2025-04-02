@@ -5,3 +5,4 @@ numpy
 pomegranate
 gunicorn
 requests
+scipy
