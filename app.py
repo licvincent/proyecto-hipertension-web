@@ -6,9 +6,7 @@ import sys
 import dash
 from dash import dcc, html, Input, Output
 import plotly.graph_objects as go
-from pgmpy.models import DiscreteBayesianNetwork
-from pgmpy.estimators import MaximumLikelihoodEstimator
-from pgmpy.inference import VariableElimination
+from pomegranate import BayesianNetwork
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -38,18 +36,9 @@ except Exception as e:
     logger.error(f"Error al cargar el dataset: {e}")
     sys.exit(1)
 
-# Definir el modelo bayesiano
-modelo = DiscreteBayesianNetwork([
-    ('IMC', 'Riesgo de Hipertensión'),
-    ('Glucosa', 'Riesgo de Hipertensión'),
-    ('Colesterol', 'Riesgo de Hipertensión'),
-    ('Edad', 'Riesgo de Hipertensión'),
-    ('Actividad Física', 'Riesgo de Hipertensión'),
-    ('Sexo', 'Riesgo de Hipertensión'),
-    ('IMC', 'Colesterol'),
-    ('Edad', 'Actividad Física'),
-    ('Dieta', 'Colesterol')
-])
+# Definir y entrenar la red bayesiana con pomegranate
+modelo = BayesianNetwork()
+modelo.fit(dataset.to_numpy())  # Convertir DataFrame a array numpy
 
 # Crear la aplicación Dash
 app = dash.Dash(__name__)
@@ -68,21 +57,6 @@ app.layout = html.Div([
             {'label': 'Obesidad (>=30)', 'value': 4}
         ], value=2),
 
-        html.Label("Actividad Física (min/semana):"),
-        dcc.Dropdown(id='actividad_fisica', options=[
-            {'label': '0 minutos (Baja)', 'value': 0},
-            {'label': '60 minutos (Moderada)', 'value': 60},
-            {'label': '120 minutos (Alta)', 'value': 120}
-        ], value=60),
-
-        html.Label("Dieta:"),
-        dcc.Dropdown(id='dieta', options=[
-            {'label': 'Alta en sal', 'value': 1},
-            {'label': 'Grasas saturadas', 'value': 2},
-            {'label': 'Procesados', 'value': 3},
-            {'label': 'Saludable', 'value': 4}
-        ], value=4),
-
         html.Label("Glucosa (mg/dL):"),
         dcc.Dropdown(id='glucosa', options=[
             {'label': 'Normal (<100 mg/dL)', 'value': 1},
@@ -98,19 +72,11 @@ app.layout = html.Div([
 
         html.Label("Edad:"),
         dcc.Dropdown(id='edad', options=[
-            {'label': 'Niño (0-12 años)', 'value': 1},
-            {'label': 'Adolescente (13-17 años)', 'value': 2},
             {'label': 'Joven (18-30 años)', 'value': 3},
             {'label': 'Adulto (31-50 años)', 'value': 4},
             {'label': 'Mayor (51-70 años)', 'value': 5},
             {'label': 'Anciano (>70 años)', 'value': 6}
-        ], value=4),
-
-        html.Label("Sexo:"),
-        dcc.Dropdown(id='sexo', options=[
-            {'label': 'Hombre', 'value': 0},
-            {'label': 'Mujer', 'value': 1}
-        ], value=0)
+        ], value=4)
     ], style={'width': '50%', 'margin': 'auto'}),
 
     html.Br(),
@@ -123,29 +89,24 @@ app.layout = html.Div([
     [Output('grafico-resultados', 'figure'),
      Output('tabla-resultados', 'children')],
     [Input('btn-calcular', 'n_clicks')],
-    [Input('imc', 'value'), Input('actividad_fisica', 'value'),
-     Input('dieta', 'value'), Input('glucosa', 'value'),
-     Input('colesterol', 'value'), Input('edad', 'value'),
-     Input('sexo', 'value')]
+    [Input('imc', 'value'), Input('glucosa', 'value'),
+     Input('colesterol', 'value'), Input('edad', 'value')]
 )
-def calcular_probabilidades(n_clicks, imc, actividad_fisica, dieta, glucosa, colesterol, edad, sexo):
+def calcular_probabilidades(n_clicks, imc, glucosa, colesterol, edad):
     if n_clicks > 0:
         try:
-            modelo.fit(dataset, estimator=MaximumLikelihoodEstimator)  # Entrenamiento dentro del callback
-            inferencia = VariableElimination(modelo)
-            resultado = inferencia.query(variables=['Riesgo de Hipertensión'], evidence={
-                'IMC': imc, 'Actividad Física': actividad_fisica, 'Dieta': dieta,
-                'Glucosa': glucosa, 'Colesterol': colesterol, 'Edad': edad, 'Sexo': sexo
-            })
-            probabilidades = resultado.values
+            resultado = modelo.predict_proba([[imc, glucosa, colesterol, edad]])[0]
+            prob_hipertension = resultado[1].parameters[0]  # Probabilidad de riesgo
 
             fig = go.Figure(data=[go.Pie(
-                labels=['Sin riesgo de hipertensión', 'Con riesgo de hipertensión'],
-                values=probabilidades, marker_colors=['green', 'red'], hoverinfo='label+percent'
+                labels=['Sin riesgo', 'Con riesgo'],
+                values=[1 - prob_hipertension, prob_hipertension],
+                marker_colors=['green', 'red'],
+                hoverinfo='label+percent'
             )])
             fig.update_layout(title="Probabilidad de Riesgo de Hipertensión")
 
-            return fig, f"Sin riesgo: {probabilidades[0]:.2%}, Con riesgo: {probabilidades[1]:.2%}"
+            return fig, f"Sin riesgo: {(1 - prob_hipertension):.2%}, Con riesgo: {prob_hipertension:.2%}"
         except Exception as e:
             logger.error(f"Error en la inferencia: {e}")
             return go.Figure(), html.Div("Error al calcular las probabilidades.")
